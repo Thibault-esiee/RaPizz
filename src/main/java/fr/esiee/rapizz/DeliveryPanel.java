@@ -1,15 +1,32 @@
 package fr.esiee.rapizz;
 
-import com.github.lgooddatepicker.components.DatePicker;
-import com.github.lgooddatepicker.components.DatePickerSettings;
-
-import javax.swing.*;
-import javax.swing.table.*;
-import java.awt.*;
-import java.sql.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.FlowLayout;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.SwingConstants;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+
+import com.github.lgooddatepicker.components.DatePicker;
+import com.github.lgooddatepicker.components.DatePickerSettings;
 
 public class DeliveryPanel extends JPanel {
 
@@ -51,26 +68,21 @@ public class DeliveryPanel extends JPanel {
 
         add(filterPanel, BorderLayout.NORTH);
 
-        // === Table and Model ===
         tableModel = new DeliveryTableModel();
         table = new JTable(tableModel);
 
-        // Enable sorting
         table.setAutoCreateRowSorter(true);
 
-        // Alternate row colors
         table.setFillsViewportHeight(true);
         table.setDefaultRenderer(Object.class, new AlternatingRowColorRenderer());
 
-        // Align numeric columns right
         DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
         rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
-        table.getColumnModel().getColumn(5).setCellRenderer(rightRenderer); // Retard (min)
-        table.getColumnModel().getColumn(7).setCellRenderer(rightRenderer); // Prix (€)
+        table.getColumnModel().getColumn(5).setCellRenderer(rightRenderer);
+        table.getColumnModel().getColumn(7).setCellRenderer(rightRenderer);
 
         add(new JScrollPane(table), BorderLayout.CENTER);
 
-        // === Pagination Panel ===
         JPanel paginationPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
 
         prevPageButton = new JButton("← Précédent");
@@ -83,10 +95,8 @@ public class DeliveryPanel extends JPanel {
 
         add(paginationPanel, BorderLayout.SOUTH);
 
-        // === Load data initially ===
         loadData(null, null, 1);
 
-        // === Listeners ===
         refreshButton.addActionListener(e -> {
             currentPage = 1;
             String deliverer = delivererFilter.getSelectedItem().toString();
@@ -134,10 +144,8 @@ public class DeliveryPanel extends JPanel {
     private void loadData(String delivererFilter, LocalDate dateFilter, int page) {
         List<DeliveryRecord> records = new ArrayList<>();
 
-        // Count total rows for pagination
         totalRows = countTotalRows(delivererFilter, dateFilter);
 
-        // SQL query with limit & offset for pagination
         StringBuilder query = new StringBuilder("""
             SELECT d.name AS deliverer, v.type AS vehicle, c.name AS customer, 
                    o.order_time, o.delivery_time, o.delay_minutes,
@@ -190,13 +198,11 @@ public class DeliveryPanel extends JPanel {
 
             tableModel.setRecords(records);
 
-            // Update pagination label & buttons
             int maxPage = (int) Math.ceil((double) totalRows / pageSize);
             pageLabel.setText("Page " + currentPage + " / " + maxPage);
             prevPageButton.setEnabled(currentPage > 1);
             nextPageButton.setEnabled(currentPage < maxPage);
 
-            // Show message if no data
             if (records.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Aucune donnée trouvée pour ces filtres.", "Info", JOptionPane.INFORMATION_MESSAGE);
             }
@@ -243,7 +249,6 @@ public class DeliveryPanel extends JPanel {
         return 0;
     }
 
-    // Classe interne représentant une ligne du tableau
     private static class DeliveryRecord {
         final String deliverer;
         final String vehicle;
@@ -266,7 +271,6 @@ public class DeliveryPanel extends JPanel {
         }
     }
 
-    // TableModel personnalisé pour afficher les données
     private static class DeliveryTableModel extends AbstractTableModel {
         private List<DeliveryRecord> records = new ArrayList<>();
         private final String[] columns = {"Livreur", "Véhicule", "Client", "Date commande", "Date livraison", "Retard (min)", "Pizza", "Prix (€)"};
@@ -308,7 +312,6 @@ public class DeliveryPanel extends JPanel {
         }
     }
 
-    // Renderer pour couleurs alternées
     private static class AlternatingRowColorRenderer extends DefaultTableCellRenderer {
         private static final Color EVEN_COLOR = new Color(240, 240, 240);
         @Override
