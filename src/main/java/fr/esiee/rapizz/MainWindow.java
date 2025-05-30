@@ -21,7 +21,8 @@ public class MainWindow extends JFrame {
         tabs.addTab("Menu", new MenuPanel());
         tabs.addTab("Fiches de livraison", new DeliveryPanel());
         tabs.addTab("Créer commande", new OrderForm());
-
+        tabs.addTab("Clients", new ClientManagementPanel());
+        
         add(tabs, BorderLayout.CENTER);
     }
 

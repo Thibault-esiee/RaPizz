@@ -22,11 +22,16 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingConstants;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 
 import com.github.lgooddatepicker.components.DatePicker;
 import com.github.lgooddatepicker.components.DatePickerSettings;
+
+import fr.esiee.rapizz.OrderDetailsDialog;
+import fr.esiee.rapizz.Order;
 
 public class DeliveryPanel extends JPanel {
 
@@ -40,6 +45,7 @@ public class DeliveryPanel extends JPanel {
     private JButton prevPageButton;
     private JButton nextPageButton;
     private JLabel pageLabel;
+    private JButton detailsButton;
 
     private int currentPage = 1;
     private final int pageSize = 10;
@@ -48,7 +54,6 @@ public class DeliveryPanel extends JPanel {
     public DeliveryPanel() {
         setLayout(new BorderLayout());
 
-        // === Filters Panel ===
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
         filterPanel.add(new JLabel("Livreur :"));
@@ -93,6 +98,10 @@ public class DeliveryPanel extends JPanel {
         paginationPanel.add(pageLabel);
         paginationPanel.add(nextPageButton);
 
+        detailsButton = new JButton("Détail commande");
+        detailsButton.setEnabled(false);
+        paginationPanel.add(detailsButton);
+
         add(paginationPanel, BorderLayout.SOUTH);
 
         loadData(null, null, 1);
@@ -119,6 +128,35 @@ public class DeliveryPanel extends JPanel {
                 currentPage++;
                 reloadCurrentPage();
             }
+        });
+
+        table.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
+            @Override
+            public void valueChanged(ListSelectionEvent e) {
+                boolean selected = table.getSelectedRow() != -1;
+                detailsButton.setEnabled(selected);
+            }
+        });
+
+        detailsButton.addActionListener(e -> {
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow == -1) return;
+            int modelRow = table.convertRowIndexToModel(selectedRow);
+            DeliveryRecord record = tableModel.records.get(modelRow);
+            Order order = new Order(
+                -1,
+                record.orderTime,
+                record.deliveryTime,
+                record.basePrice,
+                false,
+                record.pizza,
+                record.deliverer,
+                record.vehicle,
+                record.customer,
+                record.delayMinutes,
+                record.basePrice
+            );
+            OrderDetailsDialog.show(this, order);
         });
     }
 

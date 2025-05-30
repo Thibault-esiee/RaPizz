@@ -21,13 +21,8 @@ public class OrderManager {
 
                 Customer customer = getCustomerById(customerId, conn)
                     .orElseThrow(() -> new SQLException("Client introuvable"));
-                int nbrOrders = customer.getNbrOrders();
 
                 boolean isFree = false;
-                if ((nbrOrders + 1) % 11 == 0) {
-                    isFree = true;
-                    finalPrice = 0;
-                }
 
                 long delayMinutes = (deliveryTime.getTime() - orderTime.getTime()) / (60 * 1000);
                 if (delayMinutes > 30) {
@@ -47,8 +42,6 @@ public class OrderManager {
                 if (!isFree) {
                     updateCustomerBalance(customerId, customer.getBalance() - finalPrice, conn);
                 }
-
-                updateCustomerNbrOrders(customerId, nbrOrders + 1, conn);
 
                 conn.commit();
                 return true;
@@ -88,7 +81,7 @@ public class OrderManager {
     }
 
     private Optional<Customer> getCustomerById(int customerId, Connection conn) throws SQLException {
-        String sql = "SELECT name, address, balance, nbrOrders FROM customers WHERE ID = ?";
+        String sql = "SELECT name, address, balance FROM customers WHERE ID = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, customerId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -97,8 +90,7 @@ public class OrderManager {
                         customerId,
                         rs.getString("name"),
                         rs.getString("address"),
-                        rs.getDouble("balance"),
-                        rs.getInt("nbrOrders")
+                        rs.getDouble("balance")
                     );
                     return Optional.of(c);
                 }
@@ -147,34 +139,22 @@ public class OrderManager {
         }
     }
 
-    private void updateCustomerNbrOrders(int customerId, int nbrOrders, Connection conn) throws SQLException {
-        String sql = "UPDATE customers SET nbrOrders = ? WHERE ID = ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, nbrOrders);
-            ps.setInt(2, customerId);
-            ps.executeUpdate();
-        }
-    }
-
     public static class Customer {
         private final int id;
         private final String name;
         private final String address;
         private final double balance;
-        private final int nbrOrders;
 
-        public Customer(int id, String name, String address, double balance, int nbrOrders) {
+        public Customer(int id, String name, String address, double balance) {
             this.id = id;
             this.name = name;
             this.address = address;
             this.balance = balance;
-            this.nbrOrders = nbrOrders;
         }
 
         public int getId() { return id; }
         public String getName() { return name; }
         public String getAddress() { return address; }
         public double getBalance() { return balance; }
-        public int getNbrOrders() { return nbrOrders; }
     }
 }
