@@ -1,3 +1,5 @@
+package fr.esiee.rapizz;
+
 import java.awt.*;
 import java.sql.*;
 import javax.swing.*;

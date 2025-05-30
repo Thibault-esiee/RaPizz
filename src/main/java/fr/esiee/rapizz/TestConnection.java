@@ -1,3 +1,4 @@
+package fr.esiee.rapizz;
 
 public class TestConnection {
     public static void main(String[] args) {
