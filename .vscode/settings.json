@@ -1,3 +1,8 @@
 {
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.jdt.ls.vmargs": "--add-modules=java.desktop",
+    "java.addExports": [
+        "javax.swing",
+        "java.awt"
+    ],
 }

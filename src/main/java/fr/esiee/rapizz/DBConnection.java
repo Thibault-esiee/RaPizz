@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.util.Properties;
 
 public class DBConnection {
+    private DBConnection() {}
     private static String URL;
     private static String USER;
     private static String PASSWORD;
