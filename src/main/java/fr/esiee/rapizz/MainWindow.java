@@ -1,7 +1,10 @@
 package fr.esiee.rapizz;
 
 import java.awt.BorderLayout;
+import java.io.IOException;
+import java.awt.Image;
 
+import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -16,6 +19,13 @@ public class MainWindow extends JFrame {
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(800, 600);
         setLocationRelativeTo(null);
+
+        try {
+            Image icon = ImageIO.read(getClass().getResource("/icon.png"));
+            setIconImage(icon);
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Failed to load icon / not present");
+        } 
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Menu", new MenuPanel());
