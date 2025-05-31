@@ -1,5 +1,6 @@
 package fr.esiee.rapizz;
 
+import java.awt.Image;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.swing.JLabel;
+import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -23,6 +25,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.JButton;
 
 public class MenuPanel extends JPanel {
 
@@ -31,10 +34,11 @@ public class MenuPanel extends JPanel {
     private PizzaTableModel tableModel;
     private JTextArea detailArea;
 
-    // Données stockées en mémoire pour faciliter filtre et détails
+    private JLabel imageLabel;
+
     private List<Pizza> pizzas = new ArrayList<>();
-    private Map<Integer, Double> sizeAdjustments = new HashMap<>(); // size_id -> price_adjust
-    private Map<Integer, String> sizeNames = new HashMap<>(); // size_id -> size name
+    private Map<Integer, Double> sizeAdjustments = new HashMap<>();
+    private Map<Integer, String> sizeNames = new HashMap<>();
 
     public MenuPanel() {
         setLayout(new BorderLayout());
@@ -50,23 +54,33 @@ public class MenuPanel extends JPanel {
         pizzaTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         add(new JScrollPane(pizzaTable), BorderLayout.CENTER);
 
+        JPanel detailPanel = new JPanel(new BorderLayout());
         detailArea = new JTextArea();
         detailArea.setEditable(false);
         detailArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        add(new JScrollPane(detailArea), BorderLayout.SOUTH);
         detailArea.setPreferredSize(new Dimension(0, 150));
+        detailPanel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
+
+        imageLabel = new JLabel();
+        imageLabel.setHorizontalAlignment(JLabel.CENTER);
+        imageLabel.setPreferredSize(new Dimension(200, 150));
+        detailPanel.add(imageLabel, BorderLayout.EAST);
+
+        JButton printButton = new JButton("Imprimer le menu");
+        printButton.addActionListener(e -> PrintMenuPDF.generate(pizzas, sizeAdjustments, sizeNames));
+        detailPanel.add(printButton, BorderLayout.SOUTH);
+
+        add(detailPanel, BorderLayout.SOUTH);
 
         loadSizeAdjustments();
         loadPizzas();
 
-        // Filtre dynamique sur recherche
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { filterPizzas(); }
             public void removeUpdate(DocumentEvent e) { filterPizzas(); }
             public void changedUpdate(DocumentEvent e) { filterPizzas(); }
         });
 
-        // Affichage détails à la sélection d’une pizza
         pizzaTable.getSelectionModel().addListSelectionListener(e -> {
             int row = pizzaTable.getSelectedRow();
             if (row >= 0) {
@@ -95,7 +109,6 @@ public class MenuPanel extends JPanel {
     private void loadPizzas() {
         pizzas.clear();
 
-        // On récupère pizzas + ingrédients concaténés
         String sql = """
             SELECT p.id, p.name, p.price,
                    GROUP_CONCAT(i.name SEPARATOR ', ') AS ingredients
@@ -148,11 +161,9 @@ public class MenuPanel extends JPanel {
         sb.append("Ingrédients : ").append(pizza.getIngredients()).append("\n\n");
         sb.append("Prix par taille :\n");
 
-        // Ordre fixe des tailles
         List<String> orderedSizes = List.of("naine", "humaine", "ogresse");
 
         for (String sizeName : orderedSizes) {
-            // Trouver sizeId correspondant
             int sizeId = -1;
             for (Map.Entry<Integer, String> entry : sizeNames.entrySet()) {
                 if (entry.getValue().equals(sizeName)) {
@@ -168,9 +179,25 @@ public class MenuPanel extends JPanel {
         }
 
         detailArea.setText(sb.toString());
+        String imagePath = "src/images/" + pizza.getName().replaceAll("\\s+", "") + ".jpeg";
+        ImageIcon originalIcon = new ImageIcon(imagePath);
+        int maxWidth = 200;
+        int maxHeight = 150;
+
+        int imgWidth = originalIcon.getIconWidth();
+        int imgHeight = originalIcon.getIconHeight();
+
+        double widthRatio = (double) maxWidth / imgWidth;
+        double heightRatio = (double) maxHeight / imgHeight;
+        double scale = Math.min(widthRatio, heightRatio);
+
+        int scaledWidth = (int) (imgWidth * scale);
+        int scaledHeight = (int) (imgHeight * scale);
+
+        Image scaledImage = originalIcon.getImage().getScaledInstance(scaledWidth, scaledHeight, Image.SCALE_SMOOTH);
+        imageLabel.setIcon(new ImageIcon(scaledImage));
     }
 
-    // Classe interne pour modèle JTable
     private static class PizzaTableModel extends AbstractTableModel {
         private List<Pizza> pizzas = new ArrayList<>();
         private final String[] cols = {"Nom", "Prix de base (€)", "Ingrédients"};
@@ -211,8 +238,7 @@ public class MenuPanel extends JPanel {
         }
     }
 
-    // Classe interne représentant une pizza
-    private static class Pizza {
+    public static class Pizza {
         private final int id;
         private final String name;
         private final double basePrice;
