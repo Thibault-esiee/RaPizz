@@ -1,8 +1,11 @@
 package fr.esiee.rapizz;
 
 import java.awt.BorderLayout;
+import java.io.IOException;
+import java.awt.Image;
 import java.sql.Connection;
 
+import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
@@ -14,17 +17,19 @@ import com.formdev.flatlaf.FlatLightLaf;
 
 public class MainWindow extends JFrame {
     private Connection connection;
-    private JTabbedPane tabs;
-    private ClientManagementPanel clientPanel;
-    private DeliveryPanel deliveryPanel;
-    private DelivererManagementPanel delivererManagementPanel;
-
     public MainWindow() {
         setTitle("RaPizz - Application");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(800, 600);
         setLocationRelativeTo(null);
 
+        try {
+            Image icon = ImageIO.read(getClass().getResource("/icon.png"));
+            setIconImage(icon);
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Failed to load icon / not present");
+        } 
+        
         try {
             connection = DBConnection.getConnection();
         } catch (Exception e) {
@@ -35,27 +40,24 @@ public class MainWindow extends JFrame {
             System.exit(1);
         }
 
-        tabs = new JTabbedPane();
+        JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Menu", new MenuPanel());
-        
-        deliveryPanel = new DeliveryPanel();
-        tabs.addTab("Fiches de livraison", deliveryPanel);
-        
-        tabs.addTab("Créer commande", new OrderForm(connection, deliveryPanel));
-        
-        clientPanel = new ClientManagementPanel();
-        tabs.addTab("Clients", clientPanel);
-        
-        delivererManagementPanel = new DelivererManagementPanel();
-        tabs.addTab("Livreurs", delivererManagementPanel);
+        tabs.addTab("Fiches de livraison", new DeliveryPanel());
+        tabs.addTab("Créer commande", new OrderForm(connection, (DeliveryPanel) tabs.getComponentAt(1)));
+        tabs.addTab("Clients", new ClientManagementPanel());
+        tabs.addTab("Livreurs", new DelivererManagementPanel());
+
+        tabs.addTab("Statistiques", new StatsPanel());
+        tabs.addTab("Recherche", new SearchPanel());
+        tabs.add("Admin", new AdminPanel());
         
         tabs.addChangeListener(e -> {
             int selectedIndex = tabs.getSelectedIndex();
             
-            if (selectedIndex == 3) {
+            if (tabs.getComponentAt(3) instanceof ClientManagementPanel clientPanel) {
                 clientPanel.refreshData();
             }
-            if (tabs.getSelectedComponent() == delivererManagementPanel) {
+            if (tabs.getSelectedComponent() instanceof DelivererManagementPanel delivererManagementPanel) {
                 delivererManagementPanel.refreshData();
             }
         });
