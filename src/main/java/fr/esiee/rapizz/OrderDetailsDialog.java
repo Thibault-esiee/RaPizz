@@ -82,14 +82,12 @@ public class OrderDetailsDialog {
                 PdfWriter.getInstance(document, fos);
                 document.open();
 
-                // Titre
                 Paragraph title = new Paragraph("Détails de la commande n°" + order.getId());
                 title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
                 document.add(title);
                 
-                document.add(new Paragraph(" ")); // Ligne vide
+                document.add(new Paragraph(" "));
                 
-                // Détails
                 addPdfField(document, "Client", order.getCustomer());
                 addPdfField(document, "Pizza", order.getPizza());
                 addPdfField(document, "Date commande", formatTimestamp(order.getOrderTime()));
