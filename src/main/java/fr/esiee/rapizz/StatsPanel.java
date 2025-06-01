@@ -18,8 +18,8 @@ public class StatsPanel extends JPanel {
         JPanel grid = new JPanel(new GridLayout(5, 1, 10, 10));
 
         grid.add(createStatCard("Meilleur client", getBestClient()));
-        grid.add(createStatCard("Livreurs avec retards", getWorstDeliverers()));
-        grid.add(createStatCard("Véhicules les plus/moins utilisés", getVehicleUsage()));
+        grid.add(createStatCard("Livreurs avec le plus/moins de retards", getWorstDeliverers()));
+        grid.add(createStatCard("Véhicules avec le plus/moins de retards", getVehicleDelays()));
         grid.add(createStatCard("Pizza la plus/moins demandée", getPizzaDemand()));
         grid.add(createStatCard("Ingrédient le plus populaire", getMostPopularIngredient()));
 
@@ -73,23 +73,42 @@ public class StatsPanel extends JPanel {
 
     private String getWorstDeliverers() {
         StringBuilder sb = new StringBuilder();
-        String sql = """
-            SELECT d.name, COUNT(o.ID) AS retards
-            FROM deliverers d
-            LEFT JOIN orders o ON o.deliverer_id = d.ID AND o.delay_minutes > 0
-            GROUP BY d.ID
-            HAVING retards > 0
-            ORDER BY retards DESC
-            LIMIT 5
+        String sqlMost = """
+            SELECT name, nbrRetards 
+            FROM deliverers 
+            WHERE nbrRetards > 0
+            ORDER BY nbrRetards DESC
+            LIMIT 1
         """;
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                sb.append(rs.getString("name"))
-                  .append(" (")
-                  .append(rs.getInt("retards"))
-                  .append(" retards)\n");
+        String sqlLeast = """
+            SELECT name, nbrRetards 
+            FROM deliverers 
+            WHERE nbrRetards > 0
+            ORDER BY nbrRetards ASC
+            LIMIT 1
+        """;
+        try (Connection conn = DBConnection.getConnection()) {
+            // Livreur avec le plus de retards
+            try (PreparedStatement ps = conn.prepareStatement(sqlMost);
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    sb.append("Plus de retards: ")
+                      .append(rs.getString("name"))
+                      .append(" (")
+                      .append(rs.getInt("nbrRetards"))
+                      .append(" retards)\n");
+                }
+            }
+            // Livreur avec le moins de retards (parmi ceux qui en ont)
+            try (PreparedStatement ps = conn.prepareStatement(sqlLeast);
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    sb.append("Moins de retards: ")
+                      .append(rs.getString("name"))
+                      .append(" (")
+                      .append(rs.getInt("nbrRetards"))
+                      .append(" retards)");
+                }
             }
         } catch (SQLException e) {
             return "Erreur: " + e.getMessage();
@@ -97,49 +116,49 @@ public class StatsPanel extends JPanel {
         return sb.length() > 0 ? sb.toString().trim() : "Aucun retard";
     }
 
-    private String getVehicleUsage() {
+    private String getVehicleDelays() {
         StringBuilder sb = new StringBuilder();
         String sqlMost = """
-            SELECT v.type, COUNT(o.ID) AS uses
-            FROM vehicles v
-            LEFT JOIN orders o ON o.vehicle_id = v.ID
-            GROUP BY v.ID
-            ORDER BY uses DESC
+            SELECT type, nbrRetard 
+            FROM vehicles 
+            WHERE nbrRetard > 0
+            ORDER BY nbrRetard DESC
             LIMIT 1
         """;
         String sqlLeast = """
-            SELECT v.type, COUNT(o.ID) AS uses
-            FROM vehicles v
-            LEFT JOIN orders o ON o.vehicle_id = v.ID
-            GROUP BY v.ID
-            ORDER BY uses ASC
+            SELECT type, nbrRetard 
+            FROM vehicles 
+            WHERE nbrRetard > 0
+            ORDER BY nbrRetard ASC
             LIMIT 1
         """;
         try (Connection conn = DBConnection.getConnection()) {
+            // Véhicule avec le plus de retards
             try (PreparedStatement ps = conn.prepareStatement(sqlMost);
                  ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    sb.append("Le plus utilisé: ")
+                    sb.append("Plus de retards: ")
                       .append(rs.getString("type"))
                       .append(" (")
-                      .append(rs.getInt("uses"))
-                      .append(" utilisations)\n");
+                      .append(rs.getInt("nbrRetard"))
+                      .append(" retards)\n");
                 }
             }
+            // Véhicule avec le moins de retards (parmi ceux qui en ont)
             try (PreparedStatement ps = conn.prepareStatement(sqlLeast);
                  ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    sb.append("Le moins utilisé: ")
+                    sb.append("Moins de retards: ")
                       .append(rs.getString("type"))
                       .append(" (")
-                      .append(rs.getInt("uses"))
-                      .append(" utilisations)");
+                      .append(rs.getInt("nbrRetard"))
+                      .append(" retards)");
                 }
             }
         } catch (SQLException e) {
             return "Erreur: " + e.getMessage();
         }
-        return sb.length() > 0 ? sb.toString().trim() : "Aucune utilisation";
+        return sb.length() > 0 ? sb.toString().trim() : "Aucun retard";
     }
 
     private String getPizzaDemand() {
