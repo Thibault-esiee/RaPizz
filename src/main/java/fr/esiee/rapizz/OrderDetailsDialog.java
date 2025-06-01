@@ -7,72 +7,69 @@ import com.lowagie.text.pdf.PdfWriter;
 import javax.swing.*;
 import java.awt.*;
 import java.io.File;
-import fr.esiee.rapizz.Order;
+import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
 
 public class OrderDetailsDialog {
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
     public static void show(Component parent, Order order) {
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(parent) instanceof Frame f ? f : null, "Détails de la commande", true);
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(parent) instanceof Frame f ? f : null, 
+                                   "Détails de la commande " + order.getId(), true);
         dialog.setLayout(new BorderLayout(10, 10));
-        dialog.setSize(450, 400);
+        dialog.setSize(500, 450);
         dialog.setLocationRelativeTo(parent);
 
-        JLabel titleLabel = new JLabel("Détails de la commande", SwingConstants.CENTER);
+        JLabel titleLabel = new JLabel("Détails de la commande #" + order.getId(), SwingConstants.CENTER);
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 18f));
         titleLabel.setBorder(BorderFactory.createEmptyBorder(15, 0, 10, 0));
         dialog.add(titleLabel, BorderLayout.NORTH);
 
         JPanel infoPanel = new JPanel(new GridLayout(0, 2, 10, 5));
-        infoPanel.setBorder(BorderFactory.createTitledBorder("Informations de la commande"));
+        infoPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
 
+        addInfoRow(infoPanel, "Client:", order.getCustomer());
+        addInfoRow(infoPanel, "Pizza:", order.getPizza());
+        addInfoRow(infoPanel, "Date commande:", formatTimestamp(order.getOrderTime()));
+        addInfoRow(infoPanel, "Date livraison:", formatTimestamp(order.getDeliveryTime()));
+        addInfoRow(infoPanel, "Prix de base (€):", order.getBasePrice() > 0 ? String.format("%.2f", order.getBasePrice()) : "Gratuit");
+        addInfoRow(infoPanel, "Prix total (€):", String.format("%.2f", order.getTotalPrice()));
+        addInfoRow(infoPanel, "Gratuite:", !order.isPaid() ? "Oui" : "Non");
+        addInfoRow(infoPanel, "Livreur:", order.getDeliverer());
+        addInfoRow(infoPanel, "Type de véhicule:", order.getVehicle());
+        addInfoRow(infoPanel, "Délai (minutes):", order.getDelayMinutes() > 0 ? String.valueOf(order.getDelayMinutes()) : "N/A");
 
-        infoPanel.add(new JLabel("Client:"));
-        infoPanel.add(new JLabel(value(order.getCustomer())));
-
-        infoPanel.add(new JLabel("Pizza:"));
-        infoPanel.add(new JLabel(value(order.getPizza())));
-
-        infoPanel.add(new JLabel("Date commande:"));
-        infoPanel.add(new JLabel(order.getOrderTime().toString()));
-
-        infoPanel.add(new JLabel("Date livraison:"));
-        infoPanel.add(new JLabel(order.getDeliveryTime().toString()));
-
-        infoPanel.add(new JLabel("Prix de base (€):"));
-        infoPanel.add(new JLabel(String.format("%.2f", order.getBasePrice())));
-
-        infoPanel.add(new JLabel("Prix total (€):"));
-        infoPanel.add(new JLabel(String.format("%.2f", order.getTotalPrice())));
-
-        infoPanel.add(new JLabel("Gratuite:"));
-        infoPanel.add(new JLabel(!order.isPaid() ? "Oui" : "Non"));
-
-        infoPanel.add(new JLabel("Livreur:"));
-        infoPanel.add(new JLabel(value(order.getDeliverer())));
-
-        infoPanel.add(new JLabel("Type de véhicule:"));
-        infoPanel.add(new JLabel(value(order.getVehicle())));
-
-        infoPanel.add(new JLabel("Délai (minutes):"));
-        infoPanel.add(new JLabel(String.valueOf(order.getDelayMinutes())));
+        JScrollPane scrollPane = new JScrollPane(infoPanel);
+        scrollPane.setBorder(null);
+        dialog.add(scrollPane, BorderLayout.CENTER);
 
         JButton closeButton = new JButton("Fermer");
-        JButton printButton = new JButton("Imprimer PDF");
+        JButton printButton = new JButton("Exporter en PDF");
 
         printButton.addActionListener(e -> printPDF(order, dialog));
         closeButton.addActionListener(e -> dialog.dispose());
 
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        buttonPanel.add(closeButton);
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
         buttonPanel.add(printButton);
-
-        dialog.add(infoPanel, BorderLayout.CENTER);
+        buttonPanel.add(closeButton);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
+        
+        dialog.setResizable(true);
         dialog.setVisible(true);
     }
 
-    private static String value(Object val) {
-        return val != null ? val.toString() : "N/A";
+    private static void addInfoRow(JPanel panel, String label, Object value) {
+        JLabel labelComp = new JLabel(label);
+        labelComp.setFont(labelComp.getFont().deriveFont(Font.BOLD));
+        panel.add(labelComp);
+        
+        JLabel valueComp = new JLabel(value != null ? value.toString() : "N/A");
+        panel.add(valueComp);
+    }
+
+    private static String formatTimestamp(Timestamp timestamp) {
+        if (timestamp == null) return "En attente";
+        return timestamp.toLocalDateTime().format(DATE_TIME_FORMATTER);
     }
 
     private static void printPDF(Order order, Component parent) {
@@ -80,29 +77,49 @@ public class OrderDetailsDialog {
         fileChooser.setSelectedFile(new File("commande_" + order.getId() + ".pdf"));
         if (fileChooser.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
-            try {
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
                 Document document = new Document();
-                PdfWriter.getInstance(document, new java.io.FileOutputStream(file));
+                PdfWriter.getInstance(document, fos);
                 document.open();
 
-                document.add(new Paragraph("Détails de la commande n°" + order.getId()));
-                document.add(new Paragraph("---------------------------"));
-                document.add(new Paragraph("Client: " + order.getCustomer()));
-                document.add(new Paragraph("Pizza: " + order.getPizza()));
-                document.add(new Paragraph("Date commande: " + order.getOrderTime()));
-                document.add(new Paragraph("Date livraison: " + order.getDeliveryTime()));
-                document.add(new Paragraph("Prix de base (€): " + order.getBasePrice()));
-                document.add(new Paragraph("Prix total (€): " + order.getTotalPrice()));
-                document.add(new Paragraph("Gratuite: " + (!order.isPaid() ? "Oui" : "Non")));
-                document.add(new Paragraph("Livreur: " + order.getDeliverer()));
-                document.add(new Paragraph("Type de véhicule: " + order.getVehicle()));
-                document.add(new Paragraph("Délai (minutes): " + order.getDelayMinutes()));
+                // Titre
+                Paragraph title = new Paragraph("Détails de la commande n°" + order.getId());
+                title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+                document.add(title);
+                
+                document.add(new Paragraph(" ")); // Ligne vide
+                
+                // Détails
+                addPdfField(document, "Client", order.getCustomer());
+                addPdfField(document, "Pizza", order.getPizza());
+                addPdfField(document, "Date commande", formatTimestamp(order.getOrderTime()));
+                addPdfField(document, "Date livraison", formatTimestamp(order.getDeliveryTime()));
+                addPdfField(document, "Prix de base (€)", order.getBasePrice() > 0 ? String.format("%.2f", order.getBasePrice()) : "Gratuit");
+                addPdfField(document, "Prix total (€)", String.format("%.2f", order.getTotalPrice()));
+                addPdfField(document, "Gratuite", !order.isPaid() ? "Oui" : "Non");
+                addPdfField(document, "Livreur", order.getDeliverer());
+                addPdfField(document, "Type de véhicule", order.getVehicle());
+                addPdfField(document, "Délai (minutes)", order.getDelayMinutes() > 0 ? String.valueOf(order.getDelayMinutes()) : "N/A");
 
                 document.close();
-                JOptionPane.showMessageDialog(parent, "PDF enregistré avec succès !");
+                
+                JOptionPane.showMessageDialog(parent, 
+                    "Le fichier a été enregistré avec succès :\n" + file.getAbsolutePath(),
+                    "Export réussi", 
+                    JOptionPane.INFORMATION_MESSAGE);
+                    
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(parent, "Erreur : " + ex.getMessage());
+                JOptionPane.showMessageDialog(parent, 
+                    "Erreur lors de l'export PDF : " + ex.getMessage(),
+                    "Erreur d'export", 
+                    JOptionPane.ERROR_MESSAGE);
+                ex.printStackTrace();
             }
         }
+    }
+    
+    private static void addPdfField(Document document, String label, String value) throws com.lowagie.text.DocumentException {
+        if (value == null) value = "N/A";
+        document.add(new Paragraph(label + ": " + value));
     }
 }

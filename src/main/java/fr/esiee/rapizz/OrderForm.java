@@ -22,33 +22,103 @@ public class OrderForm extends JPanel {
     public OrderForm(Connection connection, DeliveryPanel deliveryPanel) {
         this.connection = connection;
         this.deliveryPanel = deliveryPanel;
-        setLayout(new GridLayout(4, 2, 10, 10));
-        initializeComponents();
-        restorePendingOrders();
-    }
-
-    private void initializeComponents() {
+        
+        setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridwidth = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(10, 10, 10, 10);
+        
+        
+        Font labelFont = new Font("Arial", Font.BOLD, 14);
+        Font fieldFont = new Font("Arial", Font.PLAIN, 14);
+        Font buttonFont = new Font("Arial", Font.BOLD, 16);
+        
+        
+        JLabel titleLabel = new JLabel("Nouvelle Commande");
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+        add(titleLabel, gbc);
+        
+        
+        gbc.gridwidth = 1;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridy++;
+        
+        
+        JLabel clientLabel = new JLabel("Client :");
+        clientLabel.setFont(labelFont);
+        add(clientLabel, gbc);
+        
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
         customerCombo = new JComboBox<>();
+        customerCombo.setFont(fieldFont);
+        customerCombo.setPreferredSize(new Dimension(250, 30));
+        add(customerCombo, gbc);
+        
+        
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0.0;
+        JLabel pizzaLabel = new JLabel("Pizza :");
+        pizzaLabel.setFont(labelFont);
+        add(pizzaLabel, gbc);
+        
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
         pizzaCombo = new JComboBox<>();
+        pizzaCombo.setFont(fieldFont);
+        add(pizzaCombo, gbc);
+        
+        
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0.0;
+        JLabel sizeLabel = new JLabel("Taille :");
+        sizeLabel.setFont(labelFont);
+        add(sizeLabel, gbc);
+        
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
         sizeCombo = new JComboBox<>();
-        orderButton = new JButton("Passer la commande");
-
+        sizeCombo.setFont(fieldFont);
+        add(sizeCombo, gbc);
+        
+        
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.insets = new Insets(30, 10, 10, 10);
+        
+        orderButton = new JButton("Commander");
+        orderButton.setFont(buttonFont);
+        orderButton.setPreferredSize(new Dimension(200, 50));
+        add(orderButton, gbc);
+        
+        
         loadCustomers();
         loadPizzas();
         loadSizes();
-
+        
+        
         pizzaCombo.addActionListener(e -> loadSizes());
-
-        add(new JLabel("Client :"));
-        add(customerCombo);
-        add(new JLabel("Pizza :"));
-        add(pizzaCombo);
-        add(new JLabel("Taille :"));
-        add(sizeCombo);
-        add(new JLabel(""));
-        add(orderButton);
-
         orderButton.addActionListener(e -> processOrder());
+        
+        
+        restorePendingOrders();
     }
 
     private void restorePendingOrders() {
@@ -174,20 +244,43 @@ public class OrderForm extends JPanel {
         CustomerItem customer = (CustomerItem) customerCombo.getSelectedItem();
         PizzaItem pizza = (PizzaItem) pizzaCombo.getSelectedItem();
         SizeItem size = (SizeItem) sizeCombo.getSelectedItem();
-        LocalDateTime orderTime = LocalDateTime.now();
-        int deliveryTime = generateDeliveryTime();
-        LocalDateTime expectedDeliveryTime = orderTime.plusMinutes(deliveryTime);
-        boolean willBeFree = deliveryTime >= 31;
 
-        double finalPrice = pizza.price * (1 + size.priceAdjust / 100.0);
-
-        if (customer.balance < finalPrice) {
-            JOptionPane.showMessageDialog(this, 
-                "Solde insuffisant ! Solde actuel : " + customer.balance + "€, Prix : " + finalPrice + "€");
+        if (customer == null || pizza == null || size == null) {
+            JOptionPane.showMessageDialog(this, "Veuillez sélectionner un client, une pizza et une taille");
             return;
         }
 
         try {
+            
+            double finalPrice = size.finalPrice;
+            
+            
+            int deliveryTime = generateDeliveryTime();
+            boolean willBeFree = deliveryTime > 30;
+
+            
+            boolean isPremium = checkPremiumSubscription(customer.id);
+            boolean isFreePizza = false;
+
+            if (isPremium) {
+                int orderCount = getClientOrderCount(customer.id);
+                if (orderCount > 0 && orderCount % 10 == 0) {
+                    
+                    finalPrice = 0.0;
+                    isFreePizza = true;
+                    JOptionPane.showMessageDialog(this, 
+                        "Félicitations ! Votre pizza est gratuite grâce à votre abonnement Premium !", 
+                        "Pizza offerte", 
+                        JOptionPane.INFORMATION_MESSAGE);
+                }
+            }
+
+            if (customer.balance < finalPrice) {
+                JOptionPane.showMessageDialog(this, 
+                    "Solde insuffisant ! Solde actuel : " + customer.balance + "€, Prix : " + finalPrice + "€");
+                return;
+            }
+
             connection.setAutoCommit(false);
 
             DelivererVehiclePair pair = findAvailableDelivererAndVehicle();
@@ -205,16 +298,17 @@ public class OrderForm extends JPanel {
             try (PreparedStatement orderStmt = connection.prepareStatement(
                 """
                 INSERT INTO orders (customer_id, deliverer_id, vehicle_id, 
-                                  order_time, is_free, delivery_time, delay_minutes, expected_delivery_time)
-                VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)
+                                  order_time, is_free, delivery_time, delay_minutes, expected_delivery_time, order_price)
+                VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
                 
                 orderStmt.setInt(1, customer.id);
                 orderStmt.setInt(2, pair.delivererId);
                 orderStmt.setInt(3, pair.vehicleId);
-                orderStmt.setTimestamp(4, Timestamp.valueOf(orderTime));
+                orderStmt.setTimestamp(4, Timestamp.valueOf(LocalDateTime.now()));
                 orderStmt.setBoolean(5, willBeFree);
-                orderStmt.setTimestamp(6, Timestamp.valueOf(expectedDeliveryTime));
+                orderStmt.setTimestamp(6, Timestamp.valueOf(LocalDateTime.now().plusMinutes(deliveryTime)));
+                orderStmt.setDouble(7, finalPrice);
                 
                 orderStmt.executeUpdate();
                 
@@ -236,7 +330,7 @@ public class OrderForm extends JPanel {
 
             connection.commit();
 
-            scheduleDelivery(orderId, pair.delivererId, customer.id, finalPrice, orderTime, deliveryTime);
+            scheduleDelivery(orderId, pair.delivererId, customer.id, finalPrice, LocalDateTime.now(), deliveryTime);
 
             String message = String.format("""
                 Commande créée avec succès!
@@ -387,10 +481,11 @@ public class OrderForm extends JPanel {
         try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery("SELECT id, name, price FROM pizzas")) {
             while (rs.next()) {
+                double price = Math.round(rs.getDouble("price") * 10) / 10.0;
                 pizzaCombo.addItem(new PizzaItem(
                     rs.getInt("id"),
                     rs.getString("name"),
-                    rs.getDouble("price")
+                    price
                 ));
             }
         } catch (SQLException e) {
@@ -419,10 +514,131 @@ public class OrderForm extends JPanel {
 
     private int generateDeliveryTime() {
         Random random = new Random();
-        if (random.nextDouble() < 0.7) {
-            return random.nextInt(19) + 12; // 12 à 30 minutes
+        if (random.nextDouble() < 0.9) { 
+            return random.nextInt(19) + 12; 
         } else {
-            return random.nextInt(12) + 31; // 31 à 42 minutes
+            return random.nextInt(12) + 31; 
+        }
+    }
+
+    private boolean checkPremiumSubscription(int clientId) {
+        String query = """
+            SELECT s.name
+            FROM customers c
+            JOIN customers_subscriptions cs ON c.ID = cs.customer_id
+            JOIN subscription s ON cs.subscription_id = s.ID
+            WHERE c.ID = ? AND s.name = 'Premium'
+            """;
+
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, clientId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next(); 
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private int getClientOrderCount(int clientId) {
+        String query = "SELECT COUNT(*) FROM orders WHERE customer_id = ? AND is_free = false";
+        
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, clientId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    
+    private Customer getCustomerById(int clientId) throws SQLException {
+        String query = "SELECT ID, name, balance FROM customers WHERE ID = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, clientId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new Customer(
+                        rs.getInt("ID"),
+                        rs.getString("name"),
+                        rs.getDouble("balance")
+                    );
+                }
+            }
+        }
+        throw new SQLException("Client non trouvé");
+    }
+
+    
+    private boolean updateCustomerBalance(int clientId, double newBalance) {
+        String query = "UPDATE customers SET balance = ? WHERE ID = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setDouble(1, newBalance);
+            stmt.setInt(2, clientId);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    
+    private int createOrder(int clientId, int pizzaId, int sizeId, double price, boolean isFree) {
+        String query = "INSERT INTO orders (customer_id, order_price, is_free, order_time) VALUES (?, ?, ?, NOW())";
+        try (PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setInt(1, clientId);
+            stmt.setDouble(2, price);
+            stmt.setBoolean(3, isFree);
+            
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows == 0) {
+                return -1;
+            }
+
+            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    int orderId = generatedKeys.getInt(1);
+                    
+                    if (addProductToOrder(orderId, pizzaId, sizeId)) {
+                        return orderId;
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    
+    private boolean addProductToOrder(int orderId, int pizzaId, int sizeId) {
+        String query = "INSERT INTO orders_products (order_id, product_id) VALUES (?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, orderId);
+            stmt.setInt(2, pizzaId);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    
+    private static class Customer {
+        final int id;
+        final String name;
+        final double balance;
+
+        Customer(int id, String name, double balance) {
+            this.id = id;
+            this.name = name;
+            this.balance = balance;
         }
     }
 
@@ -463,13 +679,15 @@ public class OrderForm extends JPanel {
     private static class SizeItem {
         final String size;
         final double priceAdjust;
+        final double finalPrice;
         final String displayText;
 
         SizeItem(String size, double priceAdjust, double basePrice) {
             this.size = size;
             this.priceAdjust = priceAdjust;
-            double finalPrice = basePrice * (1 + priceAdjust / 100.0);
-            this.displayText = String.format("%s (%.2f€)", size, finalPrice);
+            
+            this.finalPrice = Math.round(basePrice * (1 + priceAdjust) * 10) / 10.0;
+            this.displayText = String.format("%s (%.1f€)", size, this.finalPrice);
         }
 
         @Override

@@ -28,7 +28,6 @@ public class AdminPanel extends JPanel {
 
         JTabbedPane tabs = new JTabbedPane();
 
-        // Catalogue pizzas
         JPanel pizzaPanel = new JPanel(new BorderLayout(10, 10));
         String[] columns = {"ID", "Nom", "Taille", "Prix (€)"};
         DefaultTableModel pizzaModel = new DefaultTableModel(columns, 0) {
@@ -65,13 +64,11 @@ public class AdminPanel extends JPanel {
 
         tabs.addTab("Catalogue pizzas", pizzaPanel);
 
-        // Règles de bonification
         JPanel bonusPanel = new JPanel(new BorderLayout(10, 10));
         bonusPanel.add(new JLabel("Gestion des règles de bonification (configurable) (placeholder)"),
                 BorderLayout.CENTER);
         tabs.addTab("Règles de bonification", bonusPanel);
 
-        // Sauvegarde / restauration
         JPanel backupPanel = new JPanel(new GridLayout(2, 1, 10, 10));
         JButton btnBackup = new JButton("Sauvegarder les données");
         JButton btnRestore = new JButton("Restaurer les données");
@@ -85,7 +82,6 @@ public class AdminPanel extends JPanel {
 
         add(tabs, BorderLayout.CENTER);
 
-        // Placeholders for button actions
         btnBackup.addActionListener(
                 e -> JOptionPane.showMessageDialog(this, this.backup(), "Sauvegarde", JOptionPane.INFORMATION_MESSAGE));
         btnRestore.addActionListener(e -> JOptionPane.showMessageDialog(this, this.restore(), "Restauration",
@@ -118,7 +114,6 @@ public class AdminPanel extends JPanel {
             files.add(csvFile);
         }
 
-        // Zip all files
         String zFile = bDir + ".zip";
 
         try {
@@ -143,7 +138,6 @@ public class AdminPanel extends JPanel {
 
             zos.close();
 
-            // Clean Up
             for (String filePath : files) {
                 new File(filePath).delete();
             }
@@ -170,7 +164,6 @@ public class AdminPanel extends JPanel {
 
             int noCol = md.getColumnCount();
 
-            // Headers for CSV
             for (int i = 1; i <= noCol; i++) {
                 fw.write(md.getColumnName(i));
                 if (i < noCol) {
@@ -180,7 +173,6 @@ public class AdminPanel extends JPanel {
 
             fw.newLine();
 
-            // Content
             while (r.next()) {
                 for (int i = 1; i <= noCol; i++) {
                     Object valObj = r.getObject(i);
@@ -212,7 +204,7 @@ public class AdminPanel extends JPanel {
             DatabaseMetaData md = c.getMetaData();
             ResultSet rs = md.getTables(null, "projet_bdd", "%", null);
 
-            ArrayList<String> tables = new ArrayList<String>(); // Hardcoded 32, to fix?
+            ArrayList<String> tables = new ArrayList<String>();
 
             while (rs.next()) {
                 if (rs.getString(1).equals("projet_bdd")) {
@@ -329,7 +321,6 @@ public class AdminPanel extends JPanel {
             }
         }
         values.add(sb.toString().replace("\"\"", "\""));
-        // Pad if missing columns
         while (values.size() < columnCount)
             values.add("");
         return values.toArray(new String[0]);
