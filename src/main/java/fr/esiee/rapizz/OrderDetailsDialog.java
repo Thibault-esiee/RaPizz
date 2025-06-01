@@ -25,8 +25,6 @@ public class OrderDetailsDialog {
         JPanel infoPanel = new JPanel(new GridLayout(0, 2, 10, 5));
         infoPanel.setBorder(BorderFactory.createTitledBorder("Informations de la commande"));
 
-        infoPanel.add(new JLabel("ID Commande:"));
-        infoPanel.add(new JLabel(String.valueOf(order.getId())));
 
         infoPanel.add(new JLabel("Client:"));
         infoPanel.add(new JLabel(value(order.getCustomer())));

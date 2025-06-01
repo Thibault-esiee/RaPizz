@@ -11,6 +11,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,18 +37,93 @@ import fr.esiee.rapizz.Order;
 
 public class DeliveryPanel extends JPanel {
 
+    private static class DeliveryRecord {
+        int orderId;
+        String customer;
+        String deliverer;
+        String vehicle;
+        LocalDateTime orderTime;
+        LocalDateTime deliveryTime;
+        double orderPrice;
+        boolean isFree;
+        int delayMinutes;
+        String pizza;
+
+        public DeliveryRecord(ResultSet rs) throws SQLException {
+            this.orderId = rs.getInt("ID");
+            this.customer = rs.getString("customer_name");
+            this.deliverer = rs.getString("deliverer_name");
+            this.vehicle = rs.getString("vehicle_type");
+            
+            Timestamp orderTs = rs.getTimestamp("order_time");
+            this.orderTime = orderTs != null ? orderTs.toLocalDateTime() : null;
+            
+            Timestamp deliveryTs = rs.getTimestamp("delivery_time");
+            this.deliveryTime = deliveryTs != null ? deliveryTs.toLocalDateTime() : null;
+            
+            this.orderPrice = rs.getDouble("order_price");
+            this.isFree = rs.getBoolean("is_free");
+            this.delayMinutes = rs.getInt("delay_minutes");
+            this.pizza = rs.getString("pizza_name");
+        }
+    }
+
+    private class DeliveryTableModel extends AbstractTableModel {
+        private final String[] columnNames = {
+            "ID", "Client", "Livreur", "Véhicule", "Heure commande", 
+            "Heure livraison", "Prix", "Gratuit", "Delai de livraison", "Pizza"
+        };
+        private List<DeliveryRecord> records = new ArrayList<>();
+        private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+        @Override
+        public int getRowCount() {
+            return records.size();
+        }
+
+        @Override
+        public int getColumnCount() {
+            return columnNames.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return columnNames[column];
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            DeliveryRecord record = records.get(rowIndex);
+            return switch (columnIndex) {
+                case 0 -> record.orderId;
+                case 1 -> record.customer;
+                case 2 -> record.deliverer;
+                case 3 -> record.vehicle;
+                case 4 -> record.orderTime != null ? record.orderTime.format(formatter) : "N/A";
+                case 5 -> record.deliveryTime != null ? record.deliveryTime.format(formatter) : "En cours";
+                case 6 -> String.format("%.2f €", record.orderPrice);
+                case 7 -> record.isFree ? "Oui" : "Non";
+                case 8 -> record.delayMinutes;
+                case 9 -> record.pizza;
+                default -> null;
+            };
+        }
+
+        public void setRecords(List<DeliveryRecord> records) {
+            this.records = records;
+            fireTableDataChanged();
+        }
+    }
+
     private JTable table;
     private DeliveryTableModel tableModel;
-
     private JComboBox<String> delivererFilter;
     private DatePicker datePicker;
     private JButton refreshButton;
-
     private JButton prevPageButton;
     private JButton nextPageButton;
     private JLabel pageLabel;
     private JButton detailsButton;
-
     private int currentPage = 1;
     private final int pageSize = 10;
     private int totalRows = 0;
@@ -83,8 +160,8 @@ public class DeliveryPanel extends JPanel {
 
         DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
         rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
-        table.getColumnModel().getColumn(5).setCellRenderer(rightRenderer);
-        table.getColumnModel().getColumn(7).setCellRenderer(rightRenderer);
+        table.getColumnModel().getColumn(6).setCellRenderer(rightRenderer);
+        table.getColumnModel().getColumn(8).setCellRenderer(rightRenderer);
 
         add(new JScrollPane(table), BorderLayout.CENTER);
 
@@ -144,20 +221,28 @@ public class DeliveryPanel extends JPanel {
             int modelRow = table.convertRowIndexToModel(selectedRow);
             DeliveryRecord record = tableModel.records.get(modelRow);
             Order order = new Order(
-                -1,
-                record.orderTime,
-                record.deliveryTime,
-                record.basePrice,
-                false,
+                record.orderId,
+                record.orderTime != null ? Timestamp.valueOf(record.orderTime) : null,
+                record.deliveryTime != null ? Timestamp.valueOf(record.deliveryTime) : null,
+                record.orderPrice,
+                !record.isFree,
                 record.pizza,
                 record.deliverer,
                 record.vehicle,
                 record.customer,
                 record.delayMinutes,
-                record.basePrice
+                record.orderPrice
             );
             OrderDetailsDialog.show(this, order);
         });
+    }
+
+    public void refreshData() {
+        currentPage = 1;
+        String deliverer = delivererFilter.getSelectedItem().toString();
+        if (deliverer.equals("Tous")) deliverer = null;
+        LocalDate date = datePicker.getDate();
+        loadData(deliverer, date, currentPage);
     }
 
     private void reloadCurrentPage() {
@@ -181,13 +266,13 @@ public class DeliveryPanel extends JPanel {
 
     private void loadData(String delivererFilter, LocalDate dateFilter, int page) {
         List<DeliveryRecord> records = new ArrayList<>();
-
         totalRows = countTotalRows(delivererFilter, dateFilter);
 
         StringBuilder query = new StringBuilder("""
-            SELECT d.name AS deliverer, v.type AS vehicle, c.name AS customer, 
-                   o.order_time, o.delivery_time, o.delay_minutes,
-                   p.name AS pizza, p.price AS base_price
+            SELECT o.ID, c.name as customer_name, d.name as deliverer_name, 
+                   v.type as vehicle_type, o.order_time, o.delivery_time, 
+                   o.order_price, o.is_free, o.delay_minutes,
+                   p.name as pizza_name
             FROM orders o
             JOIN deliverers d ON o.deliverer_id = d.ID
             JOIN vehicles v ON o.vehicle_id = v.ID
@@ -207,47 +292,44 @@ public class DeliveryPanel extends JPanel {
         query.append(" ORDER BY o.order_time DESC LIMIT ? OFFSET ?");
 
         try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(query.toString())) {
-
-            int idx = 1;
+             PreparedStatement stmt = conn.prepareStatement(query.toString())) {
+            
+            int paramIndex = 1;
             if (delivererFilter != null) {
-                ps.setString(idx++, delivererFilter);
+                stmt.setString(paramIndex++, delivererFilter);
             }
             if (dateFilter != null) {
-                ps.setDate(idx++, java.sql.Date.valueOf(dateFilter));
+                stmt.setDate(paramIndex++, java.sql.Date.valueOf(dateFilter));
             }
-            ps.setInt(idx++, pageSize);
-            ps.setInt(idx, (page - 1) * pageSize);
+            stmt.setInt(paramIndex++, pageSize);
+            stmt.setInt(paramIndex, (page - 1) * pageSize);
 
-            try (ResultSet rs = ps.executeQuery()) {
+            try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    records.add(new DeliveryRecord(
-                            rs.getString("deliverer"),
-                            rs.getString("vehicle"),
-                            rs.getString("customer"),
-                            rs.getTimestamp("order_time"),
-                            rs.getTimestamp("delivery_time"),
-                            rs.getInt("delay_minutes"),
-                            rs.getString("pizza"),
-                            rs.getDouble("base_price")
-                    ));
+                    records.add(new DeliveryRecord(rs));
                 }
             }
-
-            tableModel.setRecords(records);
-
-            int maxPage = (int) Math.ceil((double) totalRows / pageSize);
-            pageLabel.setText("Page " + currentPage + " / " + maxPage);
-            prevPageButton.setEnabled(currentPage > 1);
-            nextPageButton.setEnabled(currentPage < maxPage);
-
-            if (records.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Aucune donnée trouvée pour ces filtres.", "Info", JOptionPane.INFORMATION_MESSAGE);
-            }
-
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Erreur chargement fiches livraison : " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, 
+                "Erreur lors du chargement des données : " + e.getMessage(),
+                "Erreur", 
+                JOptionPane.ERROR_MESSAGE);
         }
+
+        tableModel.setRecords(records);
+        updatePaginationControls();
+
+        if (records.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Aucune donnée trouvée pour ces filtres.", "Info", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private void updatePaginationControls() {
+        int maxPage = (int) Math.ceil((double) totalRows / pageSize);
+        pageLabel.setText("Page " + currentPage + " / " + maxPage);
+        prevPageButton.setEnabled(currentPage > 1);
+        nextPageButton.setEnabled(currentPage < maxPage);
     }
 
     private int countTotalRows(String delivererFilter, LocalDate dateFilter) {
@@ -285,69 +367,6 @@ public class DeliveryPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Erreur comptage total : " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
         }
         return 0;
-    }
-
-    private static class DeliveryRecord {
-        final String deliverer;
-        final String vehicle;
-        final String customer;
-        final Timestamp orderTime;
-        final Timestamp deliveryTime;
-        final int delayMinutes;
-        final String pizza;
-        final double basePrice;
-
-        DeliveryRecord(String deliverer, String vehicle, String customer, Timestamp orderTime, Timestamp deliveryTime, int delayMinutes, String pizza, double basePrice) {
-            this.deliverer = deliverer;
-            this.vehicle = vehicle;
-            this.customer = customer;
-            this.orderTime = orderTime;
-            this.deliveryTime = deliveryTime;
-            this.delayMinutes = delayMinutes;
-            this.pizza = pizza;
-            this.basePrice = basePrice;
-        }
-    }
-
-    private static class DeliveryTableModel extends AbstractTableModel {
-        private List<DeliveryRecord> records = new ArrayList<>();
-        private final String[] columns = {"Livreur", "Véhicule", "Client", "Date commande", "Date livraison", "Retard (min)", "Pizza", "Prix (€)"};
-
-        public void setRecords(List<DeliveryRecord> records) {
-            this.records = records;
-            fireTableDataChanged();
-        }
-
-        @Override
-        public int getRowCount() {
-            return records.size();
-        }
-
-        @Override
-        public int getColumnCount() {
-            return columns.length;
-        }
-
-        @Override
-        public String getColumnName(int column) {
-            return columns[column];
-        }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            DeliveryRecord rec = records.get(rowIndex);
-            return switch (columnIndex) {
-                case 0 -> rec.deliverer;
-                case 1 -> rec.vehicle;
-                case 2 -> rec.customer;
-                case 3 -> rec.orderTime;
-                case 4 -> rec.deliveryTime;
-                case 5 -> rec.delayMinutes;
-                case 6 -> rec.pizza;
-                case 7 -> rec.basePrice;
-                default -> null;
-            };
-        }
     }
 
     private static class AlternatingRowColorRenderer extends DefaultTableCellRenderer {

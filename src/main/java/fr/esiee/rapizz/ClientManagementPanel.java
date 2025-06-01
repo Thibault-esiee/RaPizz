@@ -121,6 +121,14 @@ public class ClientManagementPanel extends JPanel {
         });
     }
 
+    public void refreshData() {
+        loadClients();
+        
+        if (selectedClientId != -1) {
+            loadOrdersForClient(selectedClientId);
+        }
+    }
+
     private void loadClients() {
         List<Client> clients = new ArrayList<>();
         String sql = """
