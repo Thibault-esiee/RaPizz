@@ -3,6 +3,15 @@ package fr.esiee.rapizz;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.List;
+import java.io.*;
+import java.nio.file.*;
+import java.sql.*;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.Date;
+import java.util.zip.*;
 
 public class AdminPanel extends JPanel {
 
@@ -24,7 +33,8 @@ public class AdminPanel extends JPanel {
 
         // Règles de bonification
         JPanel bonusPanel = new JPanel(new BorderLayout(10, 10));
-        bonusPanel.add(new JLabel("Gestion des règles de bonification (configurable) (placeholder)"), BorderLayout.CENTER);
+        bonusPanel.add(new JLabel("Gestion des règles de bonification (configurable) (placeholder)"),
+                BorderLayout.CENTER);
         tabs.addTab("Règles de bonification", bonusPanel);
 
         // Sauvegarde / restauration
@@ -34,14 +44,251 @@ public class AdminPanel extends JPanel {
         backupPanel.add(btnBackup);
         backupPanel.add(btnRestore);
         JPanel backupWrapper = new JPanel(new BorderLayout());
-        backupWrapper.add(new JLabel("Sauvegarde / restauration des données", SwingConstants.CENTER), BorderLayout.NORTH);
+        backupWrapper.add(new JLabel("Sauvegarde / restauration des données", SwingConstants.CENTER),
+                BorderLayout.NORTH);
         backupWrapper.add(backupPanel, BorderLayout.CENTER);
         tabs.addTab("Sauvegarde / Restauration", backupWrapper);
 
         add(tabs, BorderLayout.CENTER);
 
         // Placeholders for button actions
-        btnBackup.addActionListener(e -> JOptionPane.showMessageDialog(this, "Fonction de sauvegarde à implémenter.", "Sauvegarde", JOptionPane.INFORMATION_MESSAGE));
-        btnRestore.addActionListener(e -> JOptionPane.showMessageDialog(this, "Fonction de restauration à implémenter.", "Restauration", JOptionPane.INFORMATION_MESSAGE));
+        btnBackup.addActionListener(
+                e -> JOptionPane.showMessageDialog(this, this.backup(), "Sauvegarde", JOptionPane.INFORMATION_MESSAGE));
+        btnRestore.addActionListener(e -> JOptionPane.showMessageDialog(this, this.restore(), "Restauration",
+                JOptionPane.INFORMATION_MESSAGE));
+    }
+
+    private String backup() {
+
+        ArrayList<String> tables = getTables();
+
+        String bDir = "backup_" + new SimpleDateFormat("dd-MM-yyyy_HH-ss").format(new Date());
+        File dir = new File(bDir);
+        if (!dir.exists() && !dir.mkdirs()) {
+            return "Erreur : impossible de créer le dossier de sauvegarde.";
+        }
+        ArrayList<String> files = new ArrayList<String>();
+
+        for (String table : tables) {
+            String csvFile = bDir + File.separator + table + ".csv";
+            exportToCsv(table, csvFile);
+            files.add(csvFile);
+        }
+
+        // Zip all files
+        String zFile = bDir + ".zip";
+
+        try {
+            FileOutputStream fos = new FileOutputStream(zFile);
+            ZipOutputStream zos = new ZipOutputStream(fos);
+
+            for (String filePath : files) {
+                File file = new File(filePath);
+                FileInputStream fis = new FileInputStream(file);
+                ZipEntry zEntry = new ZipEntry(file.getName());
+                zos.putNextEntry(zEntry);
+
+                byte[] buff = new byte[1024];
+                int len;
+
+                while ((len = fis.read(buff)) > 0) {
+                    zos.write(buff, 0, len);
+                }
+                zos.closeEntry();
+                fis.close();
+            }
+
+            zos.close();
+
+            // Clean Up
+            for (String filePath : files) {
+                new File(filePath).delete();
+            }
+
+            dir.delete();
+
+            return "Sauvegarde terminée, fichier enregistré dans: " + zFile;
+        } catch (IOException e) {
+            System.err.println(e.getStackTrace());
+            return "Erreur";
+        }
+    }
+
+    private void exportToCsv(String table, String fileName) {
+        try {
+            BufferedWriter fw = new BufferedWriter(new FileWriter(fileName));
+
+            Connection c = DBConnection.getConnection();
+            String sql = "SELECT * FROM " + table;
+            Statement s = c.createStatement();
+
+            ResultSet r = s.executeQuery(sql);
+            ResultSetMetaData md = r.getMetaData();
+
+            int noCol = md.getColumnCount();
+
+            // Headers for CSV
+            for (int i = 1; i <= noCol; i++) {
+                fw.write(md.getColumnName(i));
+                if (i < noCol) {
+                    fw.write(",");
+                }
+            }
+
+            fw.newLine();
+
+            // Content
+            while (r.next()) {
+                for (int i = 1; i <= noCol; i++) {
+                    Object valObj = r.getObject(i);
+                    String valStr = valObj == null ? "" : valObj.toString();
+
+                    if (valObj instanceof String) {
+                        valStr = "\"" + valStr.replace("\"", "\"\"") + "\"";
+                    }
+
+                    fw.write(valStr);
+
+                    if (i < noCol) {
+                        fw.write(",");
+                    }
+                }
+                fw.newLine();
+            }
+
+            fw.close();
+
+        } catch (SQLException | IOException e) {
+            System.err.println(e.getStackTrace());
+        }
+    }
+
+    private ArrayList<String> getTables() {
+        try {
+            Connection c = DBConnection.getConnection();
+            DatabaseMetaData md = c.getMetaData();
+            ResultSet rs = md.getTables(null, "projet_bdd", "%", null);
+
+            ArrayList<String> tables = new ArrayList<String>(); // Hardcoded 32, to fix?
+
+            while (rs.next()) {
+                if (rs.getString(1).equals("projet_bdd")) {
+                    tables.add(rs.getString(3));
+                }
+            }
+
+            return tables;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return new ArrayList<String>();
+        }
+    }
+
+    private String restore() {
+        JFileChooser chooser = new JFileChooser();
+
+        chooser.setDialogTitle("Sélectionnez la sauvegarde");
+
+        int res = chooser.showOpenDialog(this);
+        if (res != JFileChooser.APPROVE_OPTION) {
+            return "Restauration annulée.";
+        }
+
+        File zfile = chooser.getSelectedFile();
+        String eDir = "restore_" + new SimpleDateFormat("dd-MM-yyyy_HH-ss").format(new Date());
+        File dir = new File(eDir);
+
+        if (!dir.exists() != !dir.mkdirs()) {
+            return "Impossible de créer le dossier";
+        }
+
+        try {
+            ZipInputStream zis = new ZipInputStream(new FileInputStream(zfile));
+            ZipEntry entry;
+
+            while ((entry = zis.getNextEntry()) != null) {
+                File oFile = new File(dir, entry.getName());
+                FileOutputStream fos = new FileOutputStream(oFile);
+                byte[] buff = new byte[1024];
+                int len;
+
+                while ((len = zis.read(buff)) > 0) {
+                    fos.write(buff, 0, len);
+                }
+            }
+            zis.closeEntry();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return "Erreur de décompression: " + e.getMessage();
+        }
+
+        try {
+            Connection c = DBConnection.getConnection();
+            File[] files = dir.listFiles((d, name) -> name.endsWith(".csv"));
+            if (files == null) {
+                return "Aucun CSV";
+            }
+
+            for (File csv : files) {
+                importCsv(c, csv);
+            }
+
+            return "Restauration terminée.";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Erreur :" + e.getMessage();
+        }
+    }
+
+    private void importCsv(Connection c, File file) {
+        String table = file.getName().replace(".csv", "");
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String header = br.readLine();
+            if (header == null) {
+                br.close();
+                return;
+            };
+            String[] columns = header.split(",");
+            String placeholders = String.join(",", Collections.nCopies(columns.length, "?"));
+            String insertSql = "INSERT INTO " + table + " (" + String.join(",", columns) + ") VALUES (" + placeholders + ")";
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] values = parseCsvLine(line, columns.length);
+                try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+                    for (int i = 0; i < columns.length; i++) {
+                        ps.setString(i + 1, values[i]);
+                    }
+                    ps.executeUpdate();
+                }
+            }
+
+            br.close();
+        } catch (SQLException | IOException e) {
+
+        }
+    }
+
+    private String[] parseCsvLine(String line, int columnCount) {
+        ArrayList<String> values = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        int col = 0;
+        for (char c : line.toCharArray()) {
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                values.add(sb.toString().replace("\"\"", "\""));
+                sb.setLength(0);
+                col++;
+            } else {
+                sb.append(c);
+            }
+        }
+        values.add(sb.toString().replace("\"\"", "\""));
+        // Pad if missing columns
+        while (values.size() < columnCount)
+            values.add("");
+        return values.toArray(new String[0]);
     }
 }
