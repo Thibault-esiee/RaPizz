@@ -2,6 +2,8 @@ package fr.esiee.rapizz;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableModel;
+
 import java.awt.*;
 import java.awt.List;
 import java.io.*;
@@ -28,7 +30,39 @@ public class AdminPanel extends JPanel {
 
         // Catalogue pizzas
         JPanel pizzaPanel = new JPanel(new BorderLayout(10, 10));
-        pizzaPanel.add(new JLabel("Gestion du catalogue pizzas, tailles, prix (placeholder)"), BorderLayout.CENTER);
+        String[] columns = {"ID", "Nom", "Taille", "Prix (€)"};
+        DefaultTableModel pizzaModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int col) {
+                return col != 0;
+            }
+        };
+        JTable pizzaTable = new JTable(pizzaModel);
+        pizzaTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        JScrollPane pizzaScroll = new JScrollPane(pizzaTable);
+
+        Map<Integer, String> sizeIdToName = new HashMap<>();
+        Map<String, Integer> sizeNameToId = new HashMap<>();
+        loadPizzaSizes(sizeIdToName, sizeNameToId);
+
+        JComboBox<String> sizeCombo = new JComboBox<>(sizeIdToName.values().toArray(new String[0]));
+        pizzaTable.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(sizeCombo));
+
+        JButton btnReload = new JButton("Rafraîchir");
+        JButton btnAdd = new JButton("Ajouter");
+        JButton btnDelete = new JButton("Supprimer");
+        JButton btnSave = new JButton("Enregistrer");
+
+        JPanel pizzaBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        pizzaBtnPanel.add(btnReload);
+        pizzaBtnPanel.add(btnAdd);
+        pizzaBtnPanel.add(btnDelete);
+        pizzaBtnPanel.add(btnSave);
+
+        pizzaPanel.add(new JLabel("Gestion du catalogue pizzas, tailles, prix"), BorderLayout.NORTH);
+        pizzaPanel.add(pizzaScroll, BorderLayout.CENTER);
+        pizzaPanel.add(pizzaBtnPanel, BorderLayout.SOUTH);
+
         tabs.addTab("Catalogue pizzas", pizzaPanel);
 
         // Règles de bonification
@@ -56,6 +90,15 @@ public class AdminPanel extends JPanel {
                 e -> JOptionPane.showMessageDialog(this, this.backup(), "Sauvegarde", JOptionPane.INFORMATION_MESSAGE));
         btnRestore.addActionListener(e -> JOptionPane.showMessageDialog(this, this.restore(), "Restauration",
                 JOptionPane.INFORMATION_MESSAGE));
+        btnReload.addActionListener(e -> loadPizzas(pizzaModel, sizeIdToName));
+        btnAdd.addActionListener(e -> pizzaModel.addRow(new Object[]{"", "", sizeIdToName.values().iterator().next(), ""}));
+        btnDelete.addActionListener(e -> {
+            int row = pizzaTable.getSelectedRow();
+            if (row != -1) pizzaModel.removeRow(row);
+        });
+        btnSave.addActionListener(e -> savePizzas(pizzaModel, sizeNameToId));
+
+        loadPizzas(pizzaModel, sizeIdToName);
     }
 
     private String backup() {
@@ -290,5 +333,78 @@ public class AdminPanel extends JPanel {
         while (values.size() < columnCount)
             values.add("");
         return values.toArray(new String[0]);
+    }
+
+    private void loadPizzaSizes(Map<Integer, String> idToName, Map<String, Integer> nameToId) {
+        idToName.clear();
+        nameToId.clear();
+        String sql = "SELECT id, size FROM pizza_sizes";
+        try (Connection c = DBConnection.getConnection();
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String name = rs.getString("size");
+                idToName.put(id, name);
+                nameToId.put(name, id);
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Erreur chargement tailles : " + e.getMessage());
+        }
+    }
+
+    private void loadPizzas(DefaultTableModel model, Map<Integer, String> sizeIdToName) {
+        model.setRowCount(0);
+        String sql = "SELECT id, name, price, size_id FROM pizzas";
+        try (Connection c = DBConnection.getConnection();
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery(sql)) {
+            while (rs.next()) {
+                int sizeId = rs.getInt("size_id");
+                String sizeName = sizeIdToName.getOrDefault(sizeId, "inconnu");
+                model.addRow(new Object[]{
+                    rs.getInt("id"),
+                    rs.getString("name"),
+                    sizeName,
+                    rs.getDouble("price")
+                });
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Erreur chargement pizzas : " + e.getMessage());
+        }
+    }
+
+    private void savePizzas(DefaultTableModel model, Map<String, Integer> sizeNameToId) {
+        try (Connection c = DBConnection.getConnection()) {
+            Statement s = c.createStatement();
+            s.executeUpdate("DELETE FROM pizzas");
+            String sql = "INSERT INTO pizzas (id, name, price, size_id) VALUES (?, ?, ?, ?)";
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                for (int i = 0; i < model.getRowCount(); i++) {
+                    Object id = model.getValueAt(i, 0);
+                    Object name = model.getValueAt(i, 1);
+                    Object size = model.getValueAt(i, 2);
+                    Object price = model.getValueAt(i, 3);
+                    ps.setObject(1, id.equals("") ? null : id);
+                    ps.setString(2, name == null ? "" : name.toString());
+                    ps.setDouble(3, price == null || price.toString().isEmpty() ? 0.0 : Double.parseDouble(price.toString()));
+                    ps.setInt(4, sizeNameToId.getOrDefault(size == null ? "" : size.toString(), 1));
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            JOptionPane.showMessageDialog(this, "Catalogue pizzas sauvegardé !");
+            loadPizzas(model, invertMap(sizeNameToId));
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Erreur sauvegarde pizzas : " + e.getMessage());
+        }
+    }
+
+    private Map<Integer, String> invertMap(Map<String, Integer> map) {
+        Map<Integer, String> inv = new HashMap<>();
+        for (Map.Entry<String, Integer> e : map.entrySet()) {
+            inv.put(e.getValue(), e.getKey());
+        }
+        return inv;
     }
 }
