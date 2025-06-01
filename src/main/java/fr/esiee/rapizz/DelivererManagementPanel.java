@@ -4,6 +4,8 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import java.awt.*;
 import java.sql.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -67,13 +69,29 @@ public class DelivererManagementPanel extends JPanel {
         });
     }
 
+    public void refreshData() {
+        loadDeliverers();
+        loadVehicles();
+    }
+
     private void loadDeliverers() {
         List<Deliverer> list = new ArrayList<>();
         try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT ID, name, nbrRetards FROM deliverers ORDER BY name");
+             PreparedStatement ps = conn.prepareStatement(
+                 """
+                 SELECT ID, name, nbrRetards, minutesRetards, occupe 
+                 FROM deliverers 
+                 ORDER BY name
+                 """);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                list.add(new Deliverer(rs.getInt("ID"), rs.getString("name"), rs.getInt("nbrRetards")));
+                list.add(new Deliverer(
+                    rs.getInt("ID"),
+                    rs.getString("name"),
+                    rs.getInt("nbrRetards"),
+                    rs.getInt("minutesRetards"),
+                    rs.getBoolean("occupe")
+                ));
             }
             tableModel.setDeliverers(list);
         } catch (SQLException ex) {
@@ -84,10 +102,27 @@ public class DelivererManagementPanel extends JPanel {
     private void loadVehicles() {
         List<Vehicle> list = new ArrayList<>();
         try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT ID, type, taken FROM vehicles ORDER BY type");
+             PreparedStatement ps = conn.prepareStatement(
+                 """
+                 SELECT ID, type, uses, taken, acquisition_date, nbrRetard 
+                 FROM vehicles 
+                 ORDER BY type
+                 """);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                list.add(new Vehicle(rs.getInt("ID"), rs.getString("type"), rs.getBoolean("taken")));
+                Timestamp acquisitionTs = rs.getTimestamp("acquisition_date");
+                LocalDateTime acquisitionDate = acquisitionTs != null ? 
+                    acquisitionTs.toLocalDateTime() : 
+                    LocalDateTime.of(2004, 9, 10, 0, 0);
+
+                list.add(new Vehicle(
+                    rs.getInt("ID"),
+                    rs.getString("type"),
+                    rs.getInt("uses"),
+                    rs.getBoolean("taken"),
+                    acquisitionDate,
+                    rs.getInt("nbrRetard")
+                ));
             }
             vehicleTableModel.setVehicles(list);
         } catch (SQLException e) {
@@ -102,7 +137,7 @@ public class DelivererManagementPanel extends JPanel {
             return;
         }
         try (Connection conn = DBConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement("INSERT INTO deliverers (name, nbrRetards) VALUES (?, 0)");) {
+             PreparedStatement ps = conn.prepareStatement("INSERT INTO deliverers (name, nbrRetards, minutesRetards, occupe) VALUES (?, 0, 0, false)");) {
             ps.setString(1, name);
             ps.executeUpdate();
             loadDeliverers();
@@ -149,56 +184,87 @@ public class DelivererManagementPanel extends JPanel {
     private static class Deliverer {
         int id;
         String name;
-        int retardCount;
-        Deliverer(int id, String name, int retardCount) {
+        int nbrRetards;
+        int minutesRetards;
+        boolean occupe;
+
+        Deliverer(int id, String name, int nbrRetards, int minutesRetards, boolean occupe) {
             this.id = id;
             this.name = name;
-            this.retardCount = retardCount;
+            this.nbrRetards = nbrRetards;
+            this.minutesRetards = minutesRetards;
+            this.occupe = occupe;
         }
     }
 
     private static class Vehicle {
         int id;
         String type;
+        int uses;
         boolean taken;
-        Vehicle(int id, String type, boolean taken) {
+        LocalDateTime acquisitionDate;
+        int nbrRetard;
+
+        Vehicle(int id, String type, int uses, boolean taken, LocalDateTime acquisitionDate, int nbrRetard) {
             this.id = id;
             this.type = type;
+            this.uses = uses;
             this.taken = taken;
+            this.acquisitionDate = acquisitionDate;
+            this.nbrRetard = nbrRetard;
         }
     }
 
-    private static class DelivererTableModel extends AbstractTableModel {
-        private final String[] cols = {"ID", "Nom", "Retards"};
-        private List<Deliverer> list = new ArrayList<>();
+    private class DelivererTableModel extends AbstractTableModel {
+        private List<Deliverer> deliverers = new ArrayList<>();
+        private final String[] columns = {
+            "ID", "Nom", "Nombre de retards", "Minutes de retard", "Occupé"
+        };
 
-        public void setDeliverers(List<Deliverer> list) {
-            this.list = list;
+        public void setDeliverers(List<Deliverer> deliverers) {
+            this.deliverers = deliverers;
             fireTableDataChanged();
         }
 
         public Deliverer getDelivererAt(int row) {
-            return list.get(row);
+            return deliverers.get(row);
         }
 
-        @Override public int getRowCount() { return list.size(); }
-        @Override public int getColumnCount() { return cols.length; }
-        @Override public String getColumnName(int column) { return cols[column]; }
+        @Override
+        public int getRowCount() {
+            return deliverers.size();
+        }
 
-        @Override public Object getValueAt(int row, int col) {
-            Deliverer d = list.get(row);
-            return switch (col) {
+        @Override
+        public int getColumnCount() {
+            return columns.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return columns[column];
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            Deliverer d = deliverers.get(rowIndex);
+            return switch (columnIndex) {
                 case 0 -> d.id;
                 case 1 -> d.name;
-                case 2 -> d.retardCount;
-                default -> "";
+                case 2 -> d.nbrRetards;
+                case 3 -> d.minutesRetards;
+                case 4 -> d.occupe ? "Oui" : "Non";
+                default -> null;
             };
         }
     }
 
     private static class VehicleTableModel extends AbstractTableModel {
-        private final String[] cols = {"ID", "Type", "Occupé"};
+        private final String[] cols = {
+            "ID", "Type", "Utilisations", "Occupé", "Date acquisition", "Retards"
+        };
         private List<Vehicle> list = new ArrayList<>();
+        private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
         public void setVehicles(List<Vehicle> list) {
             this.list = list;
@@ -214,7 +280,10 @@ public class DelivererManagementPanel extends JPanel {
             return switch (col) {
                 case 0 -> v.id;
                 case 1 -> v.type;
-                case 2 -> v.taken ? "Oui" : "Non";
+                case 2 -> v.uses;
+                case 3 -> v.taken ? "Oui" : "Non";
+                case 4 -> v.acquisitionDate.format(formatter);
+                case 5 -> v.nbrRetard;
                 default -> "";
             };
         }
